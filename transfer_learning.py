@@ -14,9 +14,10 @@ import scipy
 import skimage.transform as transform
 
 import matplotlib.pyplot as plt
-from IPython import display
 from matplotlib.pyplot import imshow
 plt.style.use('dark_background')
+
+# tf.compat.v1.enable_eager_execution()
 
 ######## GLOBAL VARIABLES #########
 IMAGE_SHAPE = (224, 224)
@@ -24,27 +25,27 @@ SOURCE_IMAGE_SHAPE = [300, 200, 3]
 TARGET_IMAGE_SHAPE = (224, 224, 3)
 height_diff = TARGET_IMAGE_SHAPE[1] - SOURCE_IMAGE_SHAPE[1]
 PAD = ((0,  0), (height_diff//2, height_diff // 2), (0, 0))
-DATA_ROOT = '/'
-OUTPUT_DIR = '/'
+DATA_ROOT = 'sorted_images/'  # path to the 'sorted_images' folder,  after extracted.
+OUTPUT_DIR = 'squirrel.png'
 EPOCHS = 100
 
 ######## IMAGE UTILITY FUNCTIONS #########
 
 
-def load_model():
+def load_model(weights):
     classifier_url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/2"
 
     cls = tf.keras.applications.MobileNetV2(
         input_shape=TARGET_IMAGE_SHAPE,
         include_top=False,
-        weights='imagenet',
+        weights=weights,
         pooling='avg'
     )
 
     cls2 = tf.keras.applications.MobileNetV2(
         input_shape=TARGET_IMAGE_SHAPE,
         include_top=True,
-        weights='imagenet'
+        weights=weights
     )
 
     return cls, cls2
@@ -97,7 +98,7 @@ def plot_results(model, xs):
     # this is a numpy array
     _image = xs[115:, ...][mask == 335]
     _color = np.argmax(color, 1)[mask == 335]
-    _color = [1, 2, 0, 1, 2, 1]
+    _color = [1, 1, 2, 0, 1, 1]
     plt.subplots(figsize=(30, 30))
 
     for i in range(2):
@@ -120,9 +121,9 @@ def plot_results(model, xs):
 
 
 class CustomModel(tf.keras.Model):
-    def __init__(self, *args,  **kwargs):
+    def __init__(self,  weights, *args,  **kwargs):
         super().__init__(*args, **kwargs)
-        cls, cls2 = load_model()
+        cls, cls2 = load_model(weights)
         self.before_logits = cls
         for layer in cls.layers:
             layer.trainable = False
@@ -146,8 +147,8 @@ class CustomCatLoss(tf.keras.losses.CategoricalCrossentropy):
 ######### Main #########
 
 
-def main():
-    model = CustomModel()
+def train():
+    model = CustomModel('imagenet')
 
     callback = tf.keras.callbacks.EarlyStopping(
         patience=5, mode='min', restore_best_weights=True)
@@ -161,7 +162,8 @@ def main():
     # train model
     model.fit(xs[:115, ...], (ys2[:115, ...], ys[:115, ...]), epochs=EPOCHS,
               shuffle=True, callbacks=[callback], validation_split=0.15)
-
+    # model.save('model',  save_format='tf')
+    # tf.keras.experimental.export_saved_model(model, 'model',  serving_only=True)
     # evaluate
     model.evaluate(xs[115:, ...], (ys2[115:, ...], ys[115:, ...]))
     class_, color = model.predict(xs[115:, ...])
@@ -169,6 +171,17 @@ def main():
     # plot results
     plot_results(model, xs)
 
+def plot():
+    #model = CustomModel(None)
+    #latest = tf.train.latest_checkpoint('.')
+    #model.load_weights(latest)
+    model = tf.keras.models.load_model('model.tf')
+    xs, ys, ys2 = get_data()
+    plot_results(model, xs)
+
 
 if __name__ == '__main__':
-    main()
+    if not os.path.exists('model.tf'):
+      train()
+    else:
+      plot()
